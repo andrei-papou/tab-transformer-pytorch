@@ -40,7 +40,7 @@ class Attention(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
+    def forward(self, x, mask=None):
         h = self.heads
 
         x = self.norm(x)
@@ -50,6 +50,8 @@ class Attention(nn.Module):
         q = q * self.scale
 
         sim = einsum('b h i d, b h j d -> b h i j', q, k)
+        if mask is not None:
+            sim[mask.unsqueeze(1).unsqueeze(-1).repeat(1, h, 1, mask.shape[1]).transpose(2, 3) == 0] = -1e7
 
         attn = sim.softmax(dim = -1)
         dropped_attn = self.dropout(attn)
@@ -81,11 +83,11 @@ class Transformer(nn.Module):
                 FeedForward(dim, dropout = ff_dropout),
             ]))
 
-    def forward(self, x, return_attn = False):
+    def forward(self, x, return_attn = False, mask=None):
         post_softmax_attns = []
 
         for attn, ff in self.layers:
-            attn_out, post_softmax_attn = attn(x)
+            attn_out, post_softmax_attn = attn(x, mask)
             post_softmax_attns.append(post_softmax_attn)
 
             x = attn_out + x
@@ -180,7 +182,7 @@ class FTTransformer(nn.Module):
             nn.Linear(dim, dim_out)
         )
 
-    def forward(self, x_categ, x_numer, return_attn = False):
+    def forward(self, x_categ, x_numer, return_attn = False, mask=None):
         assert x_categ.shape[-1] == self.num_categories, f'you must pass in {self.num_categories} values for your categories input'
 
         xs = []
@@ -208,7 +210,7 @@ class FTTransformer(nn.Module):
 
         # attend
 
-        x, attns = self.transformer(x, return_attn = True)
+        x, attns = self.transformer(x, return_attn = True, mask=mask)
 
         # get cls token
 
